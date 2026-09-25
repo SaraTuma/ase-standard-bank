@@ -6,6 +6,12 @@ function Gastos({ sessao, chamar }) {
   const [ocupado, setOcupado] = React.useState(true);
   const [carregandoContas, setCarregandoContas] = React.useState(true);
 
+  // Estados para Filtros e Paginação
+  const [busca, setBusca] = React.useState("");
+  const [filtroTendencia, setFiltroTendencia] = React.useState("TODOS");
+  const [paginaAtual, setPaginaAtual] = React.useState(1);
+  const [itensPorPagina, setItensPorPagina] = React.useState(5);
+
   // 1. Carregar as contas do cliente através do viewDashboard
   React.useEffect(() => {
     async function obterContas() {
@@ -18,7 +24,7 @@ function Gastos({ sessao, chamar }) {
           id: text(a, "accountId"),
           iban: text(a, "iban") || text(a, "accountId"),
           tipo: text(a, "accountType")
-        })).filter(a => a.id); // Garante que só guarda contas válidas
+        })).filter(a => a.id);
 
         setContas(listaContas);
         if (listaContas.length > 0) {
@@ -28,22 +34,24 @@ function Gastos({ sessao, chamar }) {
       setCarregandoContas(false);
     }
     if (sessao?.customerId) obterContas();
-  }, [sessao.customerId, chamar]);
+  }, [sessao?.customerId, chamar]);
 
   // 2. Carregar insights de gastos quando a conta selecionada mudar
-  const carregar = React.useCallback(async () => {
-    if (!contaSelecionada) return;
+  const carregar = React.useCallback(async (idConta) => {
+    const targetAccountId = idConta || contaSelecionada;
+    if (!targetAccountId) return;
+    
     setOcupado(true);
     setEstado(null);
+    setPaginaAtual(1); // Reset da página ao recarregar
     
-    
-    const r = await chamar("viewSpendingInsights", { customerId: contaSelecionada });
+    // Parâmetro corrigido para accountId
+    const r = await chamar("viewSpendingInsights", { customerId: targetAccountId });
     
     if (r.erro) {
       setEstado(r);
-      setL([]); // Define como lista vazia em caso de erro para não travar a UI
+      setL([]);
     } else {
-      // Extrai e filtra apenas insights válidos (com categoria ou mensagem)
       const listaInsights = all(r.doc, "insight")
         .map(i => ({
           categoria: text(i, "category"),
@@ -52,7 +60,7 @@ function Gastos({ sessao, chamar }) {
           mesPassado: text(i, "lastMonth"),
           pct: num(i, "changePercentage")
         }))
-        .filter(i => i.categoria || i.mensagem); // Garante que ignora nós vazios retornados do XML
+        .filter(i => i.categoria || i.mensagem);
 
       setL(listaInsights);
     }
@@ -61,14 +69,50 @@ function Gastos({ sessao, chamar }) {
 
   React.useEffect(() => {
     if (contaSelecionada) {
-      carregar();
+      carregar(contaSelecionada);
     }
   }, [contaSelecionada, carregar]);
+
+  // 3. Filtragem dos insights no lado do cliente
+  const insightsFiltrados = React.useMemo(() => {
+    if (!l) return [];
+
+    return l.filter(i => {
+      // Filtro por tendência de gasto (Aumento / Redução)
+      if (filtroTendencia === "AUMENTO" && (i.pct === null || i.pct <= 0)) return false;
+      if (filtroTendencia === "REDUCAO" && (i.pct === null || i.pct >= 0)) return false;
+
+      // Filtro de pesquisa por texto (Categoria ou Mensagem)
+      if (busca.trim() !== "") {
+        const termo = busca.toLowerCase();
+        const catNome = (i.categoria || "").toLowerCase();
+        const msg = (i.mensagem || "").toLowerCase();
+
+        return catNome.includes(termo) || msg.includes(termo);
+      }
+
+      return true;
+    });
+  }, [l, busca, filtroTendencia]);
+
+  // Reset para a página 1 ao alterar filtros
+  React.useEffect(() => {
+    setPaginaAtual(1);
+  }, [busca, filtroTendencia, itensPorPagina]);
+
+  // 4. Lógica de Paginação
+  const totalPaginas = Math.ceil(insightsFiltrados.length / itensPorPagina) || 1;
+  const indiceInicial = (paginaAtual - 1) * itensPorPagina;
+  const insightsPaginados = insightsFiltrados.slice(indiceInicial, indiceInicial + itensPorPagina);
 
   return (
     <>
       <Cabecalho titulo="Os seus gastos" sub="Comparação com o mês anterior, categoria a categoria">
-        <Botao variante="ghost" ocupado={ocupado || carregandoContas} onClick={carregar}>
+        <Botao 
+          variante="ghost" 
+          ocupado={ocupado || carregandoContas} 
+          onClick={() => carregar(contaSelecionada)}
+        >
           Actualizar
         </Botao>
       </Cabecalho>
@@ -83,7 +127,7 @@ function Gastos({ sessao, chamar }) {
             className="campo"
             value={contaSelecionada}
             onChange={(e) => setContaSelecionada(e.target.value)}
-            disabled={ocupado}
+            disabled={ocupado || carregandoContas}
             style={{ width: "100%", padding: "10px", borderRadius: "8px" }}
           >
             {contas.map((c) => (
@@ -103,25 +147,114 @@ function Gastos({ sessao, chamar }) {
 
       {!ocupado && !carregandoContas && l && (
         <section className="card">
+          {/* Barra Superior de Filtros */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>
+              {l.length} {l.length === 1 ? "registo" : "registos"}
+            </h3>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                type="text"
+                placeholder="Pesquisar categoria..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                className="campo"
+                style={{ padding: "6px 12px", fontSize: 13, minWidth: 160 }}
+              />
+
+              <select
+                value={filtroTendencia}
+                onChange={(e) => setFiltroTendencia(e.target.value)}
+                className="campo"
+                style={{ padding: "6px 12px", fontSize: 13 }}
+              >
+                <option value="TODOS">Todas as tendências</option>
+                <option value="AUMENTO">Aumento de gastos</option>
+                <option value="REDUCAO">Redução de gastos</option>
+              </select>
+            </div>
+          </div>
+
           {l.length === 0 ? (
             <Vazio titulo="Não há gastos registrados nesta conta">
               Não foram encontrados registos ou movimentos de gastos para a conta selecionada.
             </Vazio>
+          ) : insightsFiltrados.length === 0 ? (
+            <Vazio titulo="Nenhum resultado encontrado">
+              Nenhum gasto corresponde aos critérios da sua pesquisa.
+            </Vazio>
           ) : (
-            l.map((i, k) => (
-              <div className="insight" key={k}>
-                <span className="c">{cat(i.categoria)}</span>         
-                <div className="t">
-                  <span>{i.mensagem}</span>
-                  <div>Mês passado: {i.mesPassado} Kz | Este mês: {i.esteMes} Kz </div>
+            <>
+              {/* Lista Paginada de Insights */}
+              {insightsPaginados.map((i, k) => (
+                <div className="insight" key={k}>
+                  <span className="c">{cat(i.categoria)}</span>        
+                  <div className="t">
+                    <span>{i.mensagem}</span>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                      Mês passado: {i.mesPassado} Kz | Este mês: {i.esteMes} Kz
+                    </div>
+                  </div>
+                  {i.pct !== null && (
+                    <span className={"p " + (i.pct < 0 ? "pos" : i.pct > 0 ? "neg" : "")}>
+                      {pctF(i.pct)}
+                    </span>
+                  )}
                 </div>
-                {i.pct !== null && (
-                  <span className={"p " + (i.pct < 0 ? "pos" : i.pct > 0 ? "neg" : "")}>
-                    {pctF(i.pct)}
+              ))}
+
+              {/* Controlos de Paginação */}
+              <div 
+                style={{ 
+                  display: "flex", 
+                  justify: "space-between", 
+                  alignItems: "center", 
+                  marginTop: 16, 
+                  paddingTop: 12, 
+                  borderTop: "1px solid var(--border, #eee)",
+                  flexWrap: "wrap",
+                  gap: 12
+                }}
+              >
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                  A mostrar {indiceInicial + 1}–{Math.min(indiceInicial + itensPorPagina, insightsFiltrados.length)} de {insightsFiltrados.length}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <select
+                    value={itensPorPagina}
+                    onChange={(e) => setItensPorPagina(Number(e.target.value))}
+                    className="campo"
+                    style={{ padding: "4px 8px", fontSize: 12 }}
+                  >
+                    <option value={5}>5 por pág.</option>
+                    <option value={10}>10 por pág.</option>
+                    <option value={20}>20 por pág.</option>
+                  </select>
+
+                  <Botao 
+                    variante="ghost" 
+                    disabled={paginaAtual === 1} 
+                    onClick={() => setPaginaAtual(p => p - 1)}
+                  >
+                    Anterior
+                  </Botao>
+
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>
+                    {paginaAtual} / {totalPaginas}
                   </span>
-                )}
+
+                  <Botao 
+                    variante="ghost" 
+                    disabled={paginaAtual >= totalPaginas} 
+                    onClick={() => setPaginaAtual(p => p + 1)}
+                  >
+                    Seguinte
+                  </Botao>
+                </div>
               </div>
-            ))
+            </>
           )}
         </section>
       )}

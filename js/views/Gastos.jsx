@@ -27,7 +27,7 @@ function Gastos({ sessao, chamar }) {
       }
       setCarregandoContas(false);
     }
-    obterContas();
+    if (sessao?.customerId) obterContas();
   }, [sessao.customerId, chamar]);
 
   // 2. Carregar insights de gastos quando a conta selecionada mudar
@@ -44,10 +44,12 @@ function Gastos({ sessao, chamar }) {
       setL([]); // Define como lista vazia em caso de erro para não travar a UI
     } else {
       // Extrai e filtra apenas insights válidos (com categoria ou mensagem)
-      const listaInsights = all(r.doc, "insights")
+      const listaInsights = all(r.doc, "insight")
         .map(i => ({
           categoria: text(i, "category"),
           mensagem: text(i, "message"),
+          esteMes: text(i, "currentMonth"),
+          mesPassado: text(i, "lastMonth"),
           pct: num(i, "changePercentage")
         }))
         .filter(i => i.categoria || i.mensagem); // Garante que ignora nós vazios retornados do XML
@@ -108,8 +110,11 @@ function Gastos({ sessao, chamar }) {
           ) : (
             l.map((i, k) => (
               <div className="insight" key={k}>
-                <span className="c">{cat(i.categoria)}</span>
-                <span className="t">{i.mensagem}</span>
+                <span className="c">{cat(i.categoria)}</span>         
+                <div className="t">
+                  <span>{i.mensagem}</span>
+                  <div>Mês passado: {i.mesPassado} Kz | Este mês: {i.esteMes} Kz </div>
+                </div>
                 {i.pct !== null && (
                   <span className={"p " + (i.pct < 0 ? "pos" : i.pct > 0 ? "neg" : "")}>
                     {pctF(i.pct)}

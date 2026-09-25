@@ -43,10 +43,10 @@ function Cartao({ chamar }) {
         </div>
         <div className="actions">
           <Botao ocupado={ocupado === "BLOQUEAR"} disabled={!!ocupado || !cardId.trim()}
-                 onClick={() => agir("BLOQUEAR")}>Bloquear cartão</Botao>
+                 onClick={() => agir("BLOQUEADO")}>Bloquear cartão</Botao>
           <Botao variante="ghost" ocupado={ocupado === "DESBLOQUEAR"}
                  disabled={!!ocupado || !cardId.trim()}
-                 onClick={() => agir("DESBLOQUEAR")}>Desbloquear</Botao>
+                 onClick={() => agir("ATIVO")}>Desbloquear</Botao>
         </div>
         <p className="hint" style={{ marginTop:14 }}>
           O bloqueio é imediato e pode ser revertido aqui a qualquer momento.

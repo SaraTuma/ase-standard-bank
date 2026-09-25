@@ -46,7 +46,7 @@ function Extracto({ sessao, chamar }) {
       setD({
         conta: text(r.doc, "accountId"), 
         iban: text(r.doc, "iban"),
-        movs: all(r.doc, "transactions").map(t => ({
+        movs: all(r.doc, "transaction").map(t => ({
           id: text(t, "transactionId"), 
           data: text(t, "transactionDate"),
           descricao: text(t, "description"), 
